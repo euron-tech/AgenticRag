@@ -125,10 +125,23 @@ Create two projects (dev and prod) at <https://supabase.com>. From each:
 | Value | Where to find it |
 |---|---|
 | `SUPABASE_URL` | Project Settings → API → Project URL |
-| `SUPABASE_ANON_KEY` | Project Settings → API → `anon` `public` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Project Settings → API → `service_role` (**secret**) |
-| `SUPABASE_JWT_SECRET` | Project Settings → API → JWT Settings → JWT Secret |
+| `SUPABASE_ANON_KEY` | API Keys → `anon public`, or `publishable` (`sb_publishable_…`) |
+| `SUPABASE_SERVICE_ROLE_KEY` | API Keys → `service_role`, or `secret` (`sb_secret_…`) — **not** the publishable one |
+| `SUPABASE_JWT_SECRET` | Leave blank unless the project still uses legacy HS256 tokens |
 | `SUPABASE_DB_URL` | Project Settings → Database → Connection string → URI |
+
+> **All five must come from the same project.** Mixing a URL from one project
+> with a key from another produces a 401 that looks like a bad key. The project
+> ref is the subdomain in `SUPABASE_URL` and also sits in the `ref` claim of a
+> legacy JWT key.
+
+> **Publishable vs secret.** `sb_publishable_…` is safe to expose and cannot
+> create accounts or bypass RLS. If it lands in the `SUPABASE_SERVICE_ROLE_KEY`
+> slot, sign-in works but admin user creation returns 401.
+
+The backend reads each token's own header and verifies ES256/RS256 against the
+project's JWKS endpoint, falling back to HS256 when a legacy token arrives. A
+project that rotates to asymmetric keys keeps working without a redeploy.
 
 Two settings to change in the Supabase dashboard:
 

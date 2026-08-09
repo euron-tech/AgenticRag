@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_anon_key: str
     supabase_service_role_key: str
-    supabase_jwt_secret: str
+    # Only needed for projects still issuing legacy HS256 tokens. Projects using
+    # asymmetric signing keys verify against the published JWKS instead.
+    supabase_jwt_secret: str = ""
     supabase_db_url: str
     storage_bucket: str = "documents"
 
