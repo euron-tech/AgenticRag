@@ -52,3 +52,7 @@ Thumbs.db
 tmp/
 scratch/
 uploads/
+
+# terraform plan files
+tfplan
+*.tfplan
