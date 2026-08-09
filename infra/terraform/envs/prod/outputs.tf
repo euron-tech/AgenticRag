@@ -1,0 +1,11 @@
+output "ui_url" { value = module.stack.ui_url }
+output "api_url" { value = module.stack.api_url }
+output "ui_test_url" { value = module.stack.ui_test_url }
+output "api_test_url" { value = module.stack.api_test_url }
+output "cluster_name" { value = module.stack.cluster_name }
+output "services" { value = module.stack.services }
+output "secret_names" { value = module.stack.secret_names }
+output "github_deploy_role_arn" { value = module.stack.github_deploy_role_arn }
+output "alert_topic_arn" { value = module.stack.alert_topic_arn }
+output "dashboard" { value = module.stack.dashboard }
+output "egress_cidrs" { value = module.stack.egress_cidrs }

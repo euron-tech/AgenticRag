@@ -1,0 +1,42 @@
+[project]
+name = "agentic-rag-backend"
+version = "1.0.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-q --strict-markers"
+markers = [
+    "integration: needs a live database (set TEST_DB_URL)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [".venv", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
+ignore = [
+    "B008",   # FastAPI dependencies are function calls in defaults by design
+    "E501",   # long lines are caught by the formatter
+    "N818",   # error names read as HTTP outcomes here (NotFound, Forbidden) on purpose
+    "SIM117", # nested `async with` for acquire-then-transaction is clearer than combining
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["N802", "N803"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+exclude = ["tests/"]

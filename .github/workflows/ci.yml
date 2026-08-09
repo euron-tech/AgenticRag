@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend lint and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint
+        working-directory: backend
+        run: ruff check app tests
+
+      - name: Type check
+        working-directory: backend
+        run: mypy app
+        continue-on-error: true # advisory until the codebase is fully annotated
+
+      - name: Unit tests
+        working-directory: backend
+        # No network calls: OpenAI and Supabase are never reached from CI.
+        run: pytest tests/unit -q
+
+  images:
+    name: Build and scan images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api
+            context: backend
+          - service: ui
+            context: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: false
+          load: true
+          tags: ${{ matrix.service }}:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan ${{ matrix.service }}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.service }}:ci
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0" # reported, not blocking, until a baseline is agreed
+
+  terraform:
+    name: Terraform format and validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive infra/terraform
+
+      - name: Validate every stack
+        # -backend=false so validation needs no AWS credentials.
+        run: |
+          set -e
+          for dir in infra/terraform/bootstrap infra/terraform/envs/dev infra/terraform/envs/prod; do
+            echo "--- $dir"
+            terraform -chdir="$dir" init -backend=false -input=false > /dev/null
+            terraform -chdir="$dir" validate
+          done
+
+  sql:
+    name: Migration sanity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every table must enable row level security
+        # The one check worth failing a build over: a table without RLS is a
+        # cross-department leak waiting to happen.
+        run: |
+          set -e
+          tables=$(grep -hoP 'create table if not exists public\.\K\w+' supabase/migrations/*.sql | sort -u)
+          missing=""
+          for table in $tables; do
+            if ! grep -q "alter table public.$table *enable row level security" supabase/migrations/*.sql; then
+              missing="$missing $table"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "Tables missing RLS:$missing"
+            exit 1
+          fi
+          echo "All tables enable RLS: $(echo $tables | tr '\n' ' ')"

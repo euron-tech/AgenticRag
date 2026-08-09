@@ -1,0 +1,58 @@
+name: Destroy environment
+
+# Manual only. There is no trigger that can fire this by accident.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to destroy
+        required: true
+        type: choice
+        options: [dev, prod]
+      confirm:
+        description: Type the environment name to confirm
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  destroy:
+    name: Destroy ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    # Both environments require their reviewer approval before this runs.
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'dev' }}
+    steps:
+      - name: Check the confirmation matches
+        run: |
+          if [ "${{ inputs.confirm }}" != "${{ inputs.environment }}" ]; then
+            echo "Confirmation '${{ inputs.confirm }}' does not match '${{ inputs.environment }}'."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: Assume the deploy role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.environment == 'prod' && secrets.AWS_DEPLOY_ROLE_ARN_PROD || secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Destroy
+        run: |
+          python manage.py destroy --env "${{ inputs.environment }}" --yes \
+            ${{ inputs.environment == 'prod' && '--confirm DESTROY-PROD' || '' }}

@@ -1,0 +1,61 @@
+name: Terraform plan
+
+# Shows what an infrastructure change would do, before it is merged.
+on:
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/terraform-plan.yml"
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  plan:
+    name: Plan against dev
+    runs-on: ubuntu-latest
+    # Forks cannot assume the deploy role, and should not be able to.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Plan
+        id: plan
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          cd infra/terraform/envs/dev
+          terraform init -reconfigure -input=false \
+            -backend-config="bucket=agentic-rag-tfstate-${ACCOUNT}" \
+            -backend-config="key=dev/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=agentic-rag-tfstate-lock" \
+            -backend-config="encrypt=true"
+          terraform plan -no-color -input=false \
+            -var="api_image=${ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/agentic-rag-dev-api:plan" \
+            -var="ui_image=${ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/agentic-rag-dev-ui:plan" \
+            | tee /tmp/plan.txt
+          {
+            echo "## Terraform plan (dev)"
+            echo '```'
+            tail -c 60000 /tmp/plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

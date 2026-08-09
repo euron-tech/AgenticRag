@@ -1,0 +1,56 @@
+name: Deploy prod
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    name: Blue/green to prod
+    runs-on: ubuntu-latest
+    # Configure this GitHub Environment with a required reviewer. The job pauses
+    # here until someone approves — that approval gate is the point.
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: Assume the deploy role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Apply infrastructure and push images
+        run: python manage.py up --env prod --tag "${GITHUB_SHA::7}"
+        env:
+          TF_INPUT: "0"
+
+      - name: Release
+        # Canary: 10% of traffic for five minutes, then the rest. CloudWatch
+        # alarms are wired to CodeDeploy, so a bad release rolls itself back.
+        run: python manage.py deploy --env prod --tag "${GITHUB_SHA::7}" --skip-build
+
+      - name: Report
+        if: always()
+        run: python manage.py status --env prod

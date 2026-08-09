@@ -1,0 +1,54 @@
+name: Deploy dev
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false # never interrupt a deployment mid-shift
+
+permissions:
+  contents: read
+  id-token: write # required for OIDC; no AWS keys are stored in this repository
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    name: Blue/green to dev
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false # manage.py parses terraform output
+
+      - name: Assume the deploy role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Apply infrastructure and push images
+        run: python manage.py up --env dev --tag "${GITHUB_SHA::7}"
+        env:
+          TF_INPUT: "0"
+
+      - name: Release
+        # Smoke tests the test listener and only then shifts traffic.
+        # A failed smoke test stops the deployment; blue keeps serving.
+        run: python manage.py deploy --env dev --tag "${GITHUB_SHA::7}" --skip-build
+
+      - name: Report
+        if: always()
+        run: python manage.py status --env dev
