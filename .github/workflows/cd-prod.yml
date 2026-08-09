@@ -24,33 +24,56 @@ jobs:
     # here until someone approves — that approval gate is the point.
     environment: production
     steps:
+      - name: Check the deploy role is configured
+        id: cfg
+        run: |
+          if [ -z "${{ secrets.AWS_DEPLOY_ROLE_ARN_PROD }}" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Deploy skipped"
+              echo
+              echo "\`AWS_DEPLOY_ROLE_ARN_PROD\` is not set in this repository."
+              echo
+              echo "Run \`python manage.py up --env prod\` locally, then add the"
+              echo "\`github_deploy_role_arn\` output as that repository secret."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.cfg.outputs.ready == 'true'
 
       - uses: actions/setup-python@v5
+        if: steps.cfg.outputs.ready == 'true'
         with:
           python-version: "3.12"
 
       - uses: hashicorp/setup-terraform@v3
+        if: steps.cfg.outputs.ready == 'true'
         with:
           terraform_version: 1.9.8
           terraform_wrapper: false
 
       - name: Assume the deploy role
+        if: steps.cfg.outputs.ready == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_PROD }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Apply infrastructure and push images
+        if: steps.cfg.outputs.ready == 'true'
         run: python manage.py up --env prod --tag "${GITHUB_SHA::7}"
         env:
           TF_INPUT: "0"
 
       - name: Release
+        if: steps.cfg.outputs.ready == 'true'
         # Canary: 10% of traffic for five minutes, then the rest. CloudWatch
         # alarms are wired to CodeDeploy, so a bad release rolls itself back.
         run: python manage.py deploy --env prod --tag "${GITHUB_SHA::7}" --skip-build
 
       - name: Report
-        if: always()
+        if: always() && steps.cfg.outputs.ready == 'true'
         run: python manage.py status --env prod
