@@ -215,6 +215,33 @@ into `vector(1536)`. A different model needs a migration and a full re-index.
 **Chunk sizes are in characters, not tokens.** A character budget needs no
 tokeniser download at container start; roughly four characters per token.
 
+## Demo data
+
+```bash
+python scripts/seed_demo.py
+```
+
+Creates four departments, five accounts, and twelve documents across
+`.docx`, `.xlsx`, `.csv`, `.md`, and `.json`. The files are generated and then
+pushed through the project's own loaders, chunker, and embedding client, so
+retrieval and citations behave exactly as they do for a real upload. Re-running
+is safe.
+
+It writes accounts straight into `auth.users` rather than calling the GoTrue
+admin API, so it works even when only a publishable key is configured. Two
+things that are easy to get wrong and are handled for you:
+
+- **A matching row in `auth.identities`** is required, or password sign-in fails.
+- **GoTrue scans `confirmation_token`, `recovery_token`, `email_change*`, and the
+  phone/reauthentication token columns into non-nullable Go strings.** A
+  SQL-inserted row leaves them `NULL`, and every sign-in then fails with the
+  thoroughly unhelpful `Database error querying schema`. The seeder sets them to
+  empty strings, which is what the admin API does itself.
+
+Documents seeded this way have no object in Supabase Storage, so *Reprocess*
+and *Delete* on them will report a missing file. Uploading through the admin
+console is unaffected once a secret key is configured.
+
 ## Testing
 
 ```bash
