@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path.cwd()
 sys.path.insert(0, str(ROOT / "backend"))
 
-import os
+import os  # noqa: E402
 
 for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
     if "=" in line and not line.startswith("#"):
